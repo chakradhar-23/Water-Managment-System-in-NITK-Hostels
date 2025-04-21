@@ -1,91 +1,71 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import requests
+from io import StringIO
 from datetime import timedelta
-import io
 
-# ---- Configuration ----
+# --- Tank Configurations ---
 TANKS = {
     "MT3 - Tank 1": {"channel_id": "2873578", "api_key": "B1K9WJO8D63PL7U6", "capacity": 10000},
     "MT2 - Tank 2": {"channel_id": "2741662", "api_key": "PL7GA8VEEUFJGA3Y", "capacity": 15000},
     "MT1 - Tank 3": {"channel_id": "2668039", "api_key": "IVBGOGRTY7B3ZLUQ", "capacity": 10000},
 }
 
-st.set_page_config(page_title="Water Monitoring Dashboard", layout="wide")
-st.title("💧 NITK Hostel Water Monitoring Dashboard")
-
-# ---- Data Loader ----
-@st.cache_data(show_spinner=True)
-def fetch_tank_data(channel_id, api_key, capacity):
+# --- Fetch and preprocess ---
+@st.cache_data
+def fetch_and_process(channel_id, api_key, capacity):
     url = f"https://api.thingspeak.com/channels/{channel_id}/feeds.csv?api_key={api_key}&results=10000"
-    response = requests.get(url)
-    df = pd.read_csv(io.StringIO(response.text))
+    df = pd.read_csv(StringIO(requests.get(url).text))
     df["created_at"] = pd.to_datetime(df["created_at"]) + timedelta(hours=5, minutes=30)
     df["field1"] = pd.to_numeric(df["field1"], errors="coerce").fillna(0)
     df["liters"] = (df["field1"] / 100) * capacity
-    df["rolling_liters"] = df["liters"].rolling(window=50, min_periods=1).mean()
-    return df.sort_values("created_at")
+    df["liters"] = df["liters"].clip(0, capacity)
+    df["smoothed"] = df["liters"].rolling(window=50, min_periods=1).mean()
+    df["diff"] = df["smoothed"].diff()
+    df["hour"] = df["created_at"].dt.floor("H")
+    return df
 
-# ---- Load & Process All Tanks ----
-tank_data = {}
-for name, info in TANKS.items():
-    tank_data[name] = fetch_tank_data(info["channel_id"], info["api_key"], info["capacity"])
+# --- Streamlit Setup ---
+st.set_page_config(layout="wide")
+st.title("🚰 Combined Water Monitoring Dashboard - NITK Hostels")
 
-# ---- Combined Smoothed Water Level Plot ----
-st.subheader("📊 Smoothed Water Level Comparison")
-fig, ax = plt.subplots(figsize=(12, 5))
-for name, df in tank_data.items():
-    ax.plot(df["created_at"], df["rolling_liters"], label=name)
-ax.set_title("Water Level Trend (Smoothed)")
-ax.set_xlabel("Time")
-ax.set_ylabel("Liters")
-ax.legend()
-ax.grid()
-st.pyplot(fig)
+# --- Water Level Plot (All Tanks) ---
+fig1, ax1 = plt.subplots(figsize=(14, 5))
+for name, config in TANKS.items():
+    df = fetch_and_process(config["channel_id"], config["api_key"], config["capacity"])
+    ax1.plot(df["created_at"], df["smoothed"], label=name)
+ax1.set_title("📊 Smoothed Water Levels (All Tanks)")
+ax1.set_xlabel("Time")
+ax1.set_ylabel("Water Level (Liters)")
+ax1.xaxis.set_major_locator(mdates.HourLocator(byhour=[3, 6, 12, 15, 18, 21]))
+ax1.xaxis.set_minor_locator(mdates.DayLocator())
+ax1.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+ax1.xaxis.set_minor_formatter(mdates.DateFormatter('\n%d %b'))
+ax1.grid(True)
+ax1.legend()
+fig1.autofmt_xdate()
+st.pyplot(fig1)
 
-# ---- Per Tank Analytics ----
-st.header("📈 Tank-wise Analysis")
-for tank_name, df in tank_data.items():
-    st.subheader(tank_name)
+# --- Hourly Usage Plots (One by One) ---
+st.subheader("⏱️ Hourly Usage per Tank")
 
-    # Calculate differences
-    df["diff"] = df["rolling_liters"].diff()
-    df["hour"] = df["created_at"].dt.floor("h")
-    df["date"] = df["created_at"].dt.date
-    df["usage"] = df["diff"].apply(lambda x: -x if x < 0 else 0)
+for name, config in TANKS.items():
+    df = fetch_and_process(config["channel_id"], config["api_key"], config["capacity"])
+    hourly = df.groupby("hour")["diff"].sum().reset_index()
+    hourly["usage_liters"] = -hourly["diff"].clip(upper=0)
 
-    # Daily Usage
-    daily_usage = df.groupby("date")["usage"].sum()
-    avg_daily = daily_usage.mean()
-
-    # Hourly Usage
-    hourly_usage = df.groupby("hour")["usage"].sum()
-    peak_hour = hourly_usage.idxmax()
-    peak_val = hourly_usage.max()
-
-    # 👉 Summary
-    st.markdown(f"**🔺 Average Daily Usage:** {avg_daily:.2f} Liters/day")
-    st.markdown(f"**⏰ Peak Usage Hour:** {peak_hour} — {peak_val:.2f} Liters")
-
-    # 👉 Plot Daily Usage
-    fig1, ax1 = plt.subplots()
-    ax1.plot(daily_usage.index, daily_usage.values, marker="o", color="green")
-    ax1.set_title("Daily Usage")
-    ax1.set_ylabel("Liters")
-    ax1.set_xlabel("Date")
-    ax1.grid(True)
-    st.pyplot(fig1)
-
-    # 👉 Plot Hourly Usage (Bar)
-    fig2, ax2 = plt.subplots()
-    ax2.bar(hourly_usage.index.astype(str), hourly_usage.values, color="tomato")
-    ax2.set_title("Hourly Usage")
-    ax2.set_ylabel("Liters")
-    ax2.set_xlabel("Hour")
-    ax2.tick_params(axis="x", rotation=45)
-    ax2.grid(True)
-    st.pyplot(fig2)
-
-# Optional: Add anomaly detection or refill suggestion if needed
-
+    st.markdown(f"### 🔻 {name}")
+    fig, ax = plt.subplots(figsize=(12, 4))
+    ax.bar(hourly["hour"], hourly["usage_liters"], color='crimson')
+    ax.set_title(f"{name} - Hourly Water Usage")
+    ax.set_xlabel("Hour")
+    ax.set_ylabel("Liters Used")
+    ax.xaxis.set_major_locator(mdates.HourLocator(byhour=[3, 6, 12, 15, 18, 21]))
+    ax.xaxis.set_minor_locator(mdates.DayLocator())
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+    ax.xaxis.set_minor_formatter(mdates.DateFormatter('\n%d %b'))
+    ax.grid(True)
+    fig.autofmt_xdate()
+    st.pyplot(fig)

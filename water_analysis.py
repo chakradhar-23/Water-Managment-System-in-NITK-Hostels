@@ -44,9 +44,6 @@ def classify_trend(series, threshold=0.01):
             trends.append("both")
     return trends
 
-st.set_page_config(page_title="Water Dashboard Interactive", layout="wide")
-st.title("💧 Interactive Smart Water Dashboard (All Tanks)")
-
 tank_dfs = {}
 refill_candidates = []
 

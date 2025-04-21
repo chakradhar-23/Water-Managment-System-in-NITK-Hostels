@@ -6,4 +6,4 @@ seaborn
 plotly
 streamlit-autorefresh
 
-pip install streamlit-autorefresh
+streamlit run water_analysis.py

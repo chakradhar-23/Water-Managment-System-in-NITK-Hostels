@@ -5,3 +5,5 @@ requests
 seaborn
 plotly
 streamlit-autorefresh
+
+pip install streamlit-autorefresh

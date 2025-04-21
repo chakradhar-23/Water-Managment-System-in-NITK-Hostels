@@ -5,6 +5,11 @@ from datetime import timedelta
 import requests
 from io import StringIO
 
+from streamlit_autorefresh import st_autorefresh
+
+# 🔁 Auto-refresh every 5 minutes (300,000 milliseconds)
+st_autorefresh(interval=300000, limit=None, key="refresh")
+
 # Tank configurations
 TANKS = {
     "MT3 - Tank 1": {"channel_id": "2873578", "api_key": "B1K9WJO8D63PL7U6", "capacity": 10000},

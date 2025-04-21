@@ -28,7 +28,7 @@ def fetch_data(channel_id, api_key, capacity):
     df["smoothed"] = df["liters"].rolling(window=100, min_periods=1).mean()
     return df
 
-def classify_trend(series, threshold=0.01):
+def classify_trend(series, threshold=0.05):
     trends = []
     for i in range(len(series)):
         if i < 5 or pd.isna(series[i - 5]):

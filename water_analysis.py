@@ -1,99 +1,87 @@
 import streamlit as st
 import pandas as pd
+import matplotlib.pyplot as plt
 import plotly.express as px
-import plotly.graph_objects as go
-import requests
-from io import StringIO
 from datetime import timedelta
+from io import StringIO
+import requests
 
-# --- Tank Configurations ---
 TANKS = {
     "MT3 - Tank 1": {"channel_id": "2873578", "api_key": "B1K9WJO8D63PL7U6", "capacity": 10000},
     "MT2 - Tank 2": {"channel_id": "2741662", "api_key": "PL7GA8VEEUFJGA3Y", "capacity": 15000},
     "MT1 - Tank 3": {"channel_id": "2668039", "api_key": "IVBGOGRTY7B3ZLUQ", "capacity": 10000},
 }
 
-# --- Fetch & preprocess ---
-@st.cache_data
-def fetch_and_process(channel_id, api_key, capacity):
+st.set_page_config(page_title="NITK Water Dashboard", layout="wide")
+st.title("💧 Smart Water Management Dashboard")
+
+def fetch_data(channel_id, api_key, capacity):
     url = f"https://api.thingspeak.com/channels/{channel_id}/feeds.csv?api_key={api_key}&results=10000"
-    df = pd.read_csv(StringIO(requests.get(url).text))
+    df = pd.read_csv(url)
     df["created_at"] = pd.to_datetime(df["created_at"]) + timedelta(hours=5, minutes=30)
     df["field1"] = pd.to_numeric(df["field1"], errors="coerce").fillna(0)
     df["liters"] = (df["field1"] / 100) * capacity
-    df["liters"] = df["liters"].clip(0, capacity)
+    df = df[["created_at", "liters"]]
     df["smoothed"] = df["liters"].rolling(window=50, min_periods=1).mean()
-    df["diff"] = df["smoothed"].diff()
+    return df
+
+def interactive_time_series(df_dict, column="smoothed"):
+    df_all = pd.DataFrame()
+    for tank, df in df_dict.items():
+        temp = df[["created_at", column]].copy()
+        temp["Tank"] = tank
+        df_all = pd.concat([df_all, temp])
+    fig = px.line(df_all, x="created_at", y=column, color="Tank", title="Water Level Trends (Smoothed)",
+                  labels={"created_at": "Time", column: "Liters"}, height=500)
+    st.plotly_chart(fig, use_container_width=True)
+
+tank_data = {}
+for name, info in TANKS.items():
+    st.subheader(f"📦 {name}")
+    df = fetch_data(info["channel_id"], info["api_key"], info["capacity"])
+    tank_data[name] = df
+
+    latest_level = df["liters"].iloc[-1]
+    percentage = (latest_level / info["capacity"]) * 100
+    st.metric(label="Current Water Level", value=f"{latest_level:.2f} L", delta=f"{percentage:.1f}%")
+
     df["hour"] = df["created_at"].dt.floor("H")
-    # Refill Recommendation Logic 🔍
-last_45 = df.tail(45)
-if len(last_45) > 1:
-    time_diff = (last_45["created_at"].iloc[-1] - last_45["created_at"].iloc[0]).total_seconds()
-    level_diff = last_45["smoothed"].iloc[-1] - last_45["smoothed"].iloc[0]
-    recent_rate = -level_diff / time_diff if time_diff > 0 else 0
-else:
-    recent_rate = 0
-
-usage_high = recent_rate > 0.05  # customize threshold
-level_low = latest_level < (0.3 * capacity)
-
-# Final Refill Decision
-refill_recommended = usage_high and level_low
-
-if refill_recommended:
-    st.error(f"🚨 **Refill Urgently Recommended for {name}**")
-    st.markdown(f"""
-    - 📉 **Water Level:** {latest_level:.2f} L ({percentage:.1f}%)
-    - 🔺 **Recent Usage Rate:** {recent_rate:.3f} L/s
-    """)
-else:
-    st.success(f"✅ No immediate refill required for {name}")
-
-return df
-
-# --- Streamlit Setup ---
-st.set_page_config(layout="wide")
-st.title("🚰 Interactive Water Monitoring Dashboard - NITK Hostels")
-
-# --- Combined Water Level Plot ---
-st.subheader("📊 Smoothed Water Levels - All Tanks (Interactive)")
-
-fig = go.Figure()
-for name, config in TANKS.items():
-    df = fetch_and_process(config["channel_id"], config["api_key"], config["capacity"])
-    fig.add_trace(go.Scatter(x=df["created_at"], y=df["smoothed"], mode='lines', name=name))
-
-fig.update_layout(
-    xaxis_title="Time",
-    yaxis_title="Water Level (Liters)",
-    title="Combined Tank Water Levels (Smoothed)",
-    hovermode="x unified",
-    height=500
-)
-st.plotly_chart(fig, use_container_width=True)
-
-# --- Hourly Usage Plot for Each Tank ---
-st.subheader("⏱️ Hourly Usage per Tank (Interactive Bar Graphs)")
-
-for name, config in TANKS.items():
-    df = fetch_and_process(config["channel_id"], config["api_key"], config["capacity"])
+    df["diff"] = df["smoothed"].diff()
     hourly = df.groupby("hour")["diff"].sum().reset_index()
-    hourly["usage_liters"] = -hourly["diff"].clip(upper=0)
+    hourly["usage"] = -hourly["diff"].clip(upper=0)
 
-    st.markdown(f"### 🔻 {name}")
-    fig_bar = px.bar(
-        hourly, x="hour", y="usage_liters",
-        labels={"hour": "Hour", "usage_liters": "Liters Used"},
-        title=f"{name} - Hourly Usage (L)",
-    )
-    fig_bar.update_layout(
-        xaxis=dict(
-            tickformat="%H:%M\n%d %b",
-            title="Hour of Day"
-        ),
-        yaxis_title="Liters Used",
-        hovermode="x unified",
-        height=400
-    )
-    st.plotly_chart(fig_bar, use_container_width=True)
+    st.markdown("**Hourly Usage Trend**")
+    fig2 = px.bar(hourly, x="hour", y="usage", labels={"hour": "Hour", "usage": "Usage (L)"},
+                  title="Hourly Water Usage", height=400)
+    fig2.update_layout(xaxis=dict(tickformat="%d %b %H:%M"))
+    st.plotly_chart(fig2, use_container_width=True)
+
+    df["date"] = df["created_at"].dt.date
+    daily_usage = df.groupby("date")["diff"].sum()
+    avg_daily = -daily_usage.clip(upper=0).mean()
+    st.info(f"📅 Average Daily Usage: **{avg_daily:.2f} L/day**")
+
+    if not hourly.empty:
+        peak_row = hourly.loc[hourly["usage"].idxmax()]
+        st.success(f"⏰ Peak Usage Hour: {peak_row['hour']} — {peak_row['usage']:.2f} L")
+
+    last_45 = df.tail(45)
+    if len(last_45) > 1:
+        time_diff = (last_45["created_at"].iloc[-1] - last_45["created_at"].iloc[0]).total_seconds()
+        level_diff = last_45["smoothed"].iloc[-1] - last_45["smoothed"].iloc[0]
+        rate = -level_diff / time_diff if time_diff > 0 else 0
+        high_usage = rate > 0.05
+        low_level = latest_level < 0.3 * info["capacity"]
+        refill = high_usage and low_level
+        if refill:
+            st.error(f"🚨 Refill Recommended (Recent Rate: {rate:.3f} L/s)")
+        else:
+            st.success("✅ No Immediate Refill Required")
+
+    csv = df.to_csv(index=False).encode("utf-8")
+    st.download_button("Download CSV", data=csv, file_name=f"{name.replace(' ', '_')}_data.csv")
+
+st.header("📊 Multi-Tank Water Level Comparison")
+interactive_time_series(tank_data)
+
 

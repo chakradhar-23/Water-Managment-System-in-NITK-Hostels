@@ -49,7 +49,7 @@ if refill_recommended:
 else:
     st.success(f"✅ No immediate refill required for {name}")
 
-    return df
+return df
 
 # --- Streamlit Setup ---
 st.set_page_config(layout="wide")

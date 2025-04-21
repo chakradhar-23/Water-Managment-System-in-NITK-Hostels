@@ -5,4 +5,4 @@ requests
 seaborn
 plotly
 streamlit-autorefresh
-Added requirements.txt for Streamlit app
+

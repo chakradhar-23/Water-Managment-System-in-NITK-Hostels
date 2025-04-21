@@ -25,6 +25,30 @@ def fetch_and_process(channel_id, api_key, capacity):
     df["smoothed"] = df["liters"].rolling(window=50, min_periods=1).mean()
     df["diff"] = df["smoothed"].diff()
     df["hour"] = df["created_at"].dt.floor("H")
+    # Refill Recommendation Logic 🔍
+last_45 = df.tail(45)
+if len(last_45) > 1:
+    time_diff = (last_45["created_at"].iloc[-1] - last_45["created_at"].iloc[0]).total_seconds()
+    level_diff = last_45["smoothed"].iloc[-1] - last_45["smoothed"].iloc[0]
+    recent_rate = -level_diff / time_diff if time_diff > 0 else 0
+else:
+    recent_rate = 0
+
+usage_high = recent_rate > 0.05  # customize threshold
+level_low = latest_level < (0.3 * capacity)
+
+# Final Refill Decision
+refill_recommended = usage_high and level_low
+
+if refill_recommended:
+    st.error(f"🚨 **Refill Urgently Recommended for {name}**")
+    st.markdown(f"""
+    - 📉 **Water Level:** {latest_level:.2f} L ({percentage:.1f}%)
+    - 🔺 **Recent Usage Rate:** {recent_rate:.3f} L/s
+    """)
+else:
+    st.success(f"✅ No immediate refill required for {name}")
+
     return df
 
 # --- Streamlit Setup ---

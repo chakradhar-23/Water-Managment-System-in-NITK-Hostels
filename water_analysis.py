@@ -20,15 +20,21 @@ TANKS = {
 }
 
 def fetch_data(channel_id, api_key, capacity):
-    url = f"https://api.thingspeak.com/channels/{channel_id}/feeds.csv?api_key={api_key}&results=10000"
-    df = pd.read_csv(StringIO(requests.get(url).text))
-    df["created_at"] = pd.to_datetime(df["created_at"]) + timedelta(hours=5, minutes=30)
-    df["field1"] = pd.to_numeric(df["field1"], errors="coerce").fillna(0)
-    df["liters"] = (df["field1"] / 100) * capacity
-    df["smoothed"] = df["liters"].rolling(window=100, min_periods=1).mean()
-    return df
+    try:
+        url = f"https://api.thingspeak.com/channels/{channel_id}/feeds.csv?api_key={api_key}&results=10000"
+        response = requests.get(url)
+        response.raise_for_status()
+        df = pd.read_csv(StringIO(response.text))
+        df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce") + timedelta(hours=5, minutes=30)
+        df["field1"] = pd.to_numeric(df.get("field1"), errors="coerce").fillna(0)
+        df["liters"] = (df["field1"] / 100) * capacity
+        df["smoothed"] = df["liters"].rolling(window=100, min_periods=1).mean()
+        return df
+    except Exception as e:
+        st.warning(f"Failed to load data for channel {channel_id}: {e}")
+        return pd.DataFrame()
 
-def classify_trend(series, threshold=0.05):
+def classify_trend(series, threshold=0.01):
     trends = []
     for i in range(len(series)):
         if i < 5 or pd.isna(series[i - 5]):
@@ -46,9 +52,10 @@ def classify_trend(series, threshold=0.05):
 def interactive_time_series(df_dict, column="smoothed"):
     df_all = pd.DataFrame()
     for tank, df in df_dict.items():
-        temp = df[["created_at", column]].copy()
-        temp["Tank"] = tank
-        df_all = pd.concat([df_all, temp])
+        if not df.empty:
+            temp = df[["created_at", column]].copy()
+            temp["Tank"] = tank
+            df_all = pd.concat([df_all, temp])
     fig = px.line(df_all, x="created_at", y=column, color="Tank", title="Water Level Trends (Smoothed)",
                   labels={"created_at": "Time", column: "Liters"}, height=500)
     st.plotly_chart(fig, use_container_width=True)
@@ -59,6 +66,11 @@ refill_candidates = []
 for label, config in TANKS.items():
     st.subheader(f"📦 {label}")
     df = fetch_data(config["channel_id"], config["api_key"], config["capacity"])
+
+    if df.empty or "liters" not in df.columns:
+        st.error("No valid data available for this tank.")
+        continue
+
     df["diff"] = df["smoothed"].diff()
     df["trend"] = classify_trend(df["smoothed"])
     df["inflow"] = df.apply(lambda row: row["diff"] if row["trend"] == "inflow" and row["diff"] > 0 else 0, axis=1)
@@ -92,7 +104,7 @@ for label, config in TANKS.items():
         peak_row = usage_hourly.loc[usage_hourly["usage"].idxmax()]
         st.success(f"⏰ Peak Usage Hour: {peak_row['hour']} — {peak_row['usage']:.2f} L")
 
-    # Refill condition based on recent rate
+    # Refill condition based on recent rate and level
     last_45 = df.tail(45)
     if len(last_45) > 1:
         time_diff = (last_45["created_at"].iloc[-1] - last_45["created_at"].iloc[0]).total_seconds()
@@ -100,9 +112,13 @@ for label, config in TANKS.items():
         rate = -level_diff / time_diff if time_diff > 0 else 0
         high_usage = rate > 0.05
         low_level = latest_level < 0.3 * config["capacity"]
-        refill = high_usage and low_level
+        critical_level = latest_level < 0.15 * config["capacity"]
+        refill = (high_usage and low_level) or critical_level
         if refill:
-            st.error(f"🚨 Refill Recommended (Recent Rate: {rate:.3f} L/s)")
+            if critical_level:
+                st.error(f"🚨 Critical Refill Needed: Level < 15% ({latest_level:.2f} L)")
+            else:
+                st.error(f"🚨 Refill Recommended (Recent Rate: {rate:.3f} L/s)")
         else:
             st.success("✅ No Immediate Refill Required")
 

@@ -11,7 +11,7 @@ st.set_page_config(page_title="Water Dashboard Interactive", layout="wide")
 st.title("💧 Interactive Smart Water Dashboard (All Tanks)")
 
 # 🔁 Auto-refresh every 5 minutes (300,000 milliseconds)
-st_autorefresh(interval=300000, limit=None, key="refresh")
+st_autorefresh(interval=20000, limit=None, key="refresh")
 
 # Tank configurations
 TANKS = {

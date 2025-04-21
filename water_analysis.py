@@ -22,9 +22,9 @@ def fetch_and_process(channel_id, api_key, capacity):
     df["field1"] = pd.to_numeric(df["field1"], errors="coerce").fillna(0)
     df["liters"] = (df["field1"] / 100) * capacity
     df["liters"] = df["liters"].clip(0, capacity)
-    df["smoothed"] = df["liters"].rolling(window=50, min_periods=1).mean()
+    df["smoothed"] = df["liters"].rolling(window=100, min_periods=1).mean()
     df["diff"] = df["smoothed"].diff()
-    df["hour"] = df["created_at"].dt.floor("H")
+    df["hour"] = df["created_at"].dt.floor("h")
     return df
 
 # --- Streamlit Setup ---

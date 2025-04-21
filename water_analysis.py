@@ -84,3 +84,43 @@ st.pyplot(fig2)
 # --- Raw Data Toggle ---
 if st.checkbox("📄 Show Raw Data Table"):
     st.write(df.tail(30))
+
+
+# === 📊 Combined Plot for All Tanks ===
+st.subheader("📊 Water Level Comparison Across All Tanks (Smoothed)")
+fig_combined, ax_combined = plt.subplots(figsize=(12, 5))
+
+for tank_label, tank_cfg in TANKS.items():
+    tank_df = fetch_tank_data(tank_cfg["channel_id"], tank_cfg["api_key"], tank_cfg["capacity"])
+    ax_combined.plot(tank_df["created_at"], tank_df["rolling_liters"], label=tank_label)
+
+ax_combined.set_xlabel("Timestamp")
+ax_combined.set_ylabel("Water Level (Liters)")
+ax_combined.set_title("Smoothed Water Levels of MT1, MT2, and MT3")
+ax_combined.grid(True)
+ax_combined.legend()
+st.pyplot(fig_combined)
+
+# === 📆 Corrected Daily Usage Calculation ===
+# Calculate water used per day (based on smoothed data diff)
+df["daily_diff"] = df["rolling_liters"].diff()
+df["date"] = df["created_at"].dt.date
+df["daily_usage"] = df["daily_diff"].apply(lambda x: -x if x < 0 else 0)
+
+# Sum negative differences per day to get daily usage
+daily_usage_summary = df.groupby("date")["daily_usage"].sum().reset_index()
+average_daily_usage_fixed = daily_usage_summary["daily_usage"].mean()
+
+# Display corrected average daily usage
+st.markdown(f"📆 **Corrected Average Daily Usage**: {average_daily_usage_fixed:.2f} Liters/day")
+
+# === ⏱️ Hourly Usage Bar Chart ===
+st.subheader("⏲️ Hourly Usage Bar Graph")
+
+fig_bar, ax_bar = plt.subplots(figsize=(10, 4))
+ax_bar.bar(hourly_usage["hour"].astype(str), hourly_usage["usage_liters"], color="skyblue")
+ax_bar.set_xlabel("Hour")
+ax_bar.set_ylabel("Liters Used")
+ax_bar.set_title("Hourly Water Usage (Bar Graph)")
+ax_bar.tick_params(axis='x', rotation=45)
+st.pyplot(fig_bar)

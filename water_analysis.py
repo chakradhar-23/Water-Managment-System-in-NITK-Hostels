@@ -13,7 +13,7 @@ TANKS = {
 }
 
 st.set_page_config(page_title="NITK Water Dashboard", layout="wide")
-st.title("💧 Smart Water Management Dashboard")
+st.title("💧 Smart Water Management Dashboard for NITK Hostels")
 
 def fetch_data(channel_id, api_key, capacity):
     url = f"https://api.thingspeak.com/channels/{channel_id}/feeds.csv?api_key={api_key}&results=10000"

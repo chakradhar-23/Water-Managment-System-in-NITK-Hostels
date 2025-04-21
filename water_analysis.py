@@ -6,8 +6,8 @@ import requests
 from io import StringIO
 from streamlit_autorefresh import st_autorefresh
 
-st.set_page_config(page_title="Water Dashboard Interactive", layout="wide")
-st.title("💧 Interactive Smart Water Dashboard (All Tanks)")
+st.set_page_config(page_title="NITK Water Tanks Dashboard ", layout="wide")
+st.title("💧 Water Management System in NITK Hostels ")
 
 # 🔁 Auto-refresh every 20 seconds
 st_autorefresh(interval=20000, limit=None, key="refresh")

@@ -5,5 +5,3 @@ requests
 seaborn
 plotly
 streamlit-autorefresh
-
-streamlit run water_analysis.py

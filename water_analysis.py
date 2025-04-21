@@ -81,8 +81,13 @@ for label, config in TANKS.items():
 
     # Current level metric
     latest_level = df["liters"].iloc[-1]
-    percentage = (latest_level / config["capacity"]) * 100
-    st.metric(label="Current Water Level", value=f"{latest_level:.2f} L", delta=f"{percentage:.1f}%")
+    if pd.notna(latest_level):
+        percentage = (latest_level / config["capacity"]) * 100
+        last_updated = df["created_at"].iloc[-1].strftime("%Y-%m-%d %H:%M:%S")
+        st.metric(label="Current Water Level", value=f"{latest_level:.2f} L", delta=f"{percentage:.1f}%")
+        st.caption(f"Last updated: {last_updated} IST")
+    else:
+        st.warning("Latest water level data is not available.")
 
     # Hourly usage
     usage_hourly = df.groupby("hour")["usage"].sum().reset_index()
@@ -110,7 +115,7 @@ for label, config in TANKS.items():
         time_diff = (last_45["created_at"].iloc[-1] - last_45["created_at"].iloc[0]).total_seconds()
         level_diff = last_45["smoothed"].iloc[-1] - last_45["smoothed"].iloc[0]
         rate = -level_diff / time_diff if time_diff > 0 else 0
-        high_usage = rate > 0.05
+        high_usage = rate > 1.0
         low_level = latest_level < 0.3 * config["capacity"]
         critical_level = latest_level < 0.15 * config["capacity"]
         refill = (high_usage and low_level) or critical_level
@@ -128,4 +133,3 @@ for label, config in TANKS.items():
 # Combined Multi-Tank Chart
 st.header("📊 Multi-Tank Water Level Comparison")
 interactive_time_series(tank_dfs)
-

@@ -100,9 +100,11 @@ for label, config in TANKS.items():
     st.plotly_chart(fig2, use_container_width=True)
 
     # Daily usage
-    daily_usage = df.groupby("date")["diff"].sum()
-    avg_daily = -daily_usage.clip(upper=0).mean()
+    # Correct daily usage: Sum of actual 'usage' only
+    daily_usage = df.groupby("date")["usage"].sum()
+    avg_daily = daily_usage.mean()
     st.info(f"📅 Average Daily Usage: **{avg_daily:.2f} L/day**")
+
 
     # Peak usage hour
     if not usage_hourly.empty:
